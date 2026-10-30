@@ -1,5 +1,4 @@
 
-import os
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import mysql.connector
@@ -10,10 +9,10 @@ from tkinter import simpledialog
 # ---------------- DATABASE CONNECTION ----------------
 def get_connection():
     return mysql.connector.connect(
-        host=os.getenv("MYSQL_HOST", "localhost"),
-        user=os.getenv("MYSQL_USER", "root"),
-        password=os.getenv("MYSQL_PASSWORD", ""),
-        database=os.getenv("MYSQL_DATABASE", "attendance_db")
+        host="localhost",
+        user="root",
+        password="Umesh@123",
+        database="attendance_db"
     )
 
 
@@ -998,4 +997,128 @@ def open_attendance_reports():
         return output
 
     def load_report():
+        try:            rows = fetch_report_rows()
+            for item in report_tree.get_children():
+                report_tree.delete(item)
+            for row in rows:
+                report_tree.insert("", "end", values=(
+                    row[0], row[1], row[2], row[3], row[4], row[5], f"{row[6]:.2f}%"
+                ))
+            total_present = sum(row[3] for row in rows)
+            total_absent = sum(row[4] for row in rows)
+            total_marked = total_present + total_absent
+            overall = total_present / total_marked * 100 if total_marked else 0.0
+            period_text = "all recorded dates" if period_combo.get() == "All Time" else f"{month_combo.get()}/{year_combo.get()}"
+            summary_label.config(
+                text=f"Students: {len(rows)}    |    Present: {total_present}    |    Absent: {total_absent}    |    Overall attendance: {overall:.2f}%    |    Period: {period_text}"
+            )
+        except ValueError as error:
+            messagebox.showwarning("Select Period", str(error), parent=report_win)
+        except mysql.connector.Error as error:
+            messagebox.showerror("Database Error", str(error), parent=report_win)
+
+    def export_excel():
         try:
+            rows = fetch_report_rows()
+            if not rows:
+                messagebox.showinfo("No Data", "There are no student records to export.", parent=report_win)
+                return
+            filename = filedialog.asksaveasfilename(
+                parent=report_win,
+                title="Save Attendance Report",
+                defaultextension=".xlsx",
+                filetypes=(("Excel Workbook", "*.xlsx"),),
+                initialfile=("attendance_all_time.xlsx" if period_combo.get() == "All Time"
+                             else f"attendance_{year_combo.get()}_{month_combo.get()}.xlsx")
+            )
+            if not filename:
+                return
+
+            from openpyxl import Workbook
+            from openpyxl.styles import Font, PatternFill, Alignment
+            from openpyxl.utils import get_column_letter
+
+            workbook = Workbook()
+            sheet = workbook.active
+            sheet.title = "Attendance Report"
+            sheet.append(["Roll No.", "Student Name", "Department", "Present Days",
+                          "Absent Days", "Marked Days", "Attendance Percentage"])
+            for cell in sheet[1]:
+                cell.font = Font(bold=True, color="FFFFFF")
+                cell.fill = PatternFill("solid", fgColor="172554")
+                cell.alignment = Alignment(horizontal="center")
+
+            for row in rows:
+                sheet.append([row[0], row[1], row[2], row[3], row[4], row[5], round(row[6], 2)])
+                sheet.cell(sheet.max_row, 7).number_format = '0.00"%"'
+
+            for column_cells in sheet.columns:
+                max_length = max(len(str(cell.value or "")) for cell in column_cells)
+                sheet.column_dimensions[get_column_letter(column_cells[0].column)].width = min(max_length + 3, 32)
+            sheet.freeze_panes = "A2"
+            sheet.auto_filter.ref = sheet.dimensions
+            workbook.save(filename)
+            messagebox.showinfo("Export Successful", f"Excel report saved to:\n{filename}", parent=report_win)
+        except ValueError as error:
+            messagebox.showwarning("Select Period", str(error), parent=report_win)
+        except mysql.connector.Error as error:
+            messagebox.showerror("Database Error", str(error), parent=report_win)
+        except Exception as error:
+            messagebox.showerror("Export Error", str(error), parent=report_win)
+
+    period_combo.bind("<<ComboboxSelected>>", lambda event: load_report())
+    month_combo.bind("<<ComboboxSelected>>", lambda event: load_report())
+    year_combo.bind("<<ComboboxSelected>>", lambda event: load_report())
+
+    buttons = tk.Frame(report_win, bg=BG)
+    buttons.pack(fill="x", padx=18, pady=(0, 15))
+    make_button(buttons, "Refresh Report", BLUE, load_report).pack(side="left", padx=(0, 8))
+    make_button(buttons, "Export to Excel", GREEN, export_excel).pack(side="left")
+    load_report()
+
+
+
+
+# ---------------- BUTTONS ----------------
+make_button(form, "Save Student", BLUE,
+            save_student).pack(fill="x", pady=(18, 7))
+
+make_button(form, "Clear Form", "gray",
+            clear_form).pack(fill="x", pady=4)
+
+make_button(search_row, "Search", BLUE,
+            refresh_students).pack(side="left", padx=(8, 0))
+
+make_button(search_row, "Show All", "gray",
+            lambda: (search_entry.delete(0, tk.END),
+                     refresh_students())).pack(side="left", padx=(6, 0))
+
+tree.bind("<<TreeviewSelect>>", select_student)
+
+action_row = tk.Frame(table_panel, bg=WHITE)
+action_row.pack(fill="x", pady=(12, 0))
+
+make_button(action_row, "Update Selected", GREEN,
+            save_student).pack(side="left", padx=(0, 8))
+
+make_button(action_row, "Delete Selected", RED,
+            delete_student).pack(side="left")
+
+make_button(action_row, "Manage Attendance", "purple",
+            open_attendance_window).pack(side="left", padx=8)
+
+make_button(action_row, "Attendance Reports", "teal",
+            open_attendance_reports).pack(side="left", padx=8)
+
+make_button(action_row, "Refresh", BLUE,
+            refresh_students).pack(side="right")
+
+
+# ---------------- START APP ----------------
+if login_user():
+    root.deiconify()
+    if CURRENT_USER["role"] == "admin":
+        refresh_students()
+    root.mainloop()
+else:
+    root.destroy()
