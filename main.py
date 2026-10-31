@@ -1,4 +1,5 @@
 
+import os
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import mysql.connector
@@ -9,10 +10,10 @@ from tkinter import simpledialog
 # ---------------- DATABASE CONNECTION ----------------
 def get_connection():
     return mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="Umesh@123",
-        database="attendance_db"
+        host=os.getenv("MYSQL_HOST", "localhost"),
+        user=os.getenv("MYSQL_USER", "root"),
+        password=os.getenv("MYSQL_PASSWORD"),
+        database=os.getenv("MYSQL_DATABASE", "attendance_db")
     )
 
 
@@ -1103,6 +1104,9 @@ make_button(action_row, "Update Selected", GREEN,
 
 make_button(action_row, "Delete Selected", RED,
             delete_student).pack(side="left")
+
+make_button(action_row, "Manage Teachers & Subjects", "purple",
+            open_teacher_management).pack(side="left", padx=8)
 
 make_button(action_row, "Manage Attendance", "purple",
             open_attendance_window).pack(side="left", padx=8)
